@@ -14,16 +14,22 @@ import pygame
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 FPS = 60
+WORLD_SCALE = 1.8              # tamanho do mapa em relação à tela
+WORLD_WIDTH = int(SCREEN_WIDTH * WORLD_SCALE)
+WORLD_HEIGHT = int(SCREEN_HEIGHT * WORLD_SCALE)
+CAMERA_SMOOTH = 8.0
 TITLE = "TURBO RUSH"
 
 # Carro
 CAR_ACCELERATION = 320.0      # px/s^2
 CAR_BRAKE = 600.0
 CAR_FRICTION = 160.0          # desaceleração automática
-CAR_MAX_SPEED = 420.0         # px/s
+CAR_MAX_SPEED = 440.0         # px/s
 CAR_MAX_REVERSE = 130.0
-CAR_TURN_RATE = 2.9           # rad/s
-CAR_TURN_MIN_SPEED = 90.0     # a partir daqui o carro esterça por completo
+CAR_TURN_RATE = 3.3           # rad/s em baixa velocidade
+CAR_TURN_RATE_FAST = 1.9      # rad/s na velocidade máxima (vira menos, mais estável)
+CAR_TURN_MIN_SPEED = 35.0     # a partir daqui o carro esterça por completo
+STEER_SMOOTH = 7.0            # suavização do volante
 CAR_LENGTH = 40
 CAR_WIDTH = 22
 CAR_RADIUS = 14               # raio usado nos obstáculos
@@ -46,15 +52,16 @@ GO_DURATION = 0.7
 SPEED_DISPLAY_FACTOR = 0.5    # px/s -> "km/h"
 
 # Pista
-ROAD_WIDTH = 96
-CURB_WIDTH = 8
-GRASS_MARGIN = 38             # faixa de grama além da estrada, antes do muro
-BARRIER_WIDTH = 8
+ROAD_WIDTH = 150
+CURB_WIDTH = 10
+GRASS_MARGIN = 60             # faixa de grama além da estrada, antes do muro
+BARRIER_WIDTH = 10
 TRACK_POINTS = [              # pontos de controle (curva fechada)
     (640, 630), (1000, 610), (1160, 480), (1080, 330), (900, 262),
     (985, 135), (760, 90), (560, 170), (420, 100), (200, 130),
     (110, 300), (260, 400), (160, 520), (300, 630),
 ]
+TRACK_POINTS = [(x * WORLD_SCALE, y * WORLD_SCALE) for x, y in TRACK_POINTS]
 SPLINE_STEPS = 30
 START_BACK = 14               # carro começa N pontos antes da linha
 SEARCH_WINDOW = 40            # janela de busca do progresso na pista
@@ -161,10 +168,10 @@ class Particle:
         self.vx *= 0.96
         self.vy *= 0.96
 
-    def draw(self, surface):
+    def draw(self, surface, cam):
         frac = max(0.0, self.life / self.max_life)
         radius = max(1, int(self.size * (frac if self.shrink else 1)))
-        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), radius)
+        pygame.draw.circle(surface, self.color, (int(self.x - cam[0]), int(self.y - cam[1])), radius)
 
 
 def spawn_burst(particles, pos, colors, count, speed, life, size):
@@ -205,7 +212,7 @@ class Track:
 
     # --- construção ---
     def _build_zones(self):
-        zones = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        zones = pygame.Surface((WORLD_WIDTH, WORLD_HEIGHT))
         zones.fill((ZONE_WALL, 0, 0))
         r_grass = ROAD_WIDTH // 2 + CURB_WIDTH + GRASS_MARGIN
         for x, y in self.center:
@@ -217,6 +224,7 @@ class Track:
     def _make_obstacle(self, idx, offset, kind):
         x, y = self.center[idx]
         ang = self.tangents[idx] + math.pi / 2
+        offset *= ROAD_WIDTH / 96  # proporcional à largura da estrada
         return {"pos": (x + math.cos(ang) * offset, y + math.sin(ang) * offset),
                 "kind": kind, "angle": self.tangents[idx]}
 
@@ -224,11 +232,11 @@ class Track:
         return min(math.hypot(x - cx, y - cy) for cx, cy in self.center[::4])
 
     def _build_image(self):
-        img = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        img = pygame.Surface((WORLD_WIDTH, WORLD_HEIGHT))
         img.fill(OUTSIDE)
         # decoração de fundo (listras suaves)
-        for y in range(0, SCREEN_HEIGHT, 48):
-            pygame.draw.rect(img, (32, 108, 54), (0, y, SCREEN_WIDTH, 24))
+        for y in range(0, WORLD_HEIGHT, 48):
+            pygame.draw.rect(img, (32, 108, 54), (0, y, WORLD_WIDTH, 24))
 
         r_road = ROAD_WIDTH // 2
         r_curb = r_road + CURB_WIDTH
@@ -239,7 +247,7 @@ class Track:
         for x, y in self.center:
             pygame.draw.circle(img, GRASS, (x, y), r_grass)
         # listras de grama
-        stripe = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        stripe = pygame.Surface((WORLD_WIDTH, WORLD_HEIGHT), pygame.SRCALPHA)
         for i in range(0, self.count, 6):
             x, y = self.center[i]
             pygame.draw.circle(stripe, (*GRASS_DARK, 120), (x, y), r_grass)
@@ -267,7 +275,7 @@ class Track:
         ang = self.tangents[0]
         tx, ty = math.cos(ang), math.sin(ang)
         nx, ny = -ty, tx
-        cell = 12
+        cell = 14
         cols = ROAD_WIDTH // cell
         for c in range(cols):
             for r in range(2):
@@ -283,9 +291,9 @@ class Track:
         min_dist = ROAD_WIDTH // 2 + CURB_WIDTH + GRASS_MARGIN + BARRIER_WIDTH + 24
         placed = 0
         tries = 0
-        while placed < 70 and tries < 2000:
+        while placed < 220 and tries < 8000:
             tries += 1
-            x, y = random.randint(10, SCREEN_WIDTH - 10), random.randint(10, SCREEN_HEIGHT - 10)
+            x, y = random.randint(10, WORLD_WIDTH - 10), random.randint(10, WORLD_HEIGHT - 10)
             if self._dist_to_track(x, y) < min_dist:
                 continue
             kind = random.random()
@@ -312,7 +320,7 @@ class Track:
     # --- consulta ---
     def zone_at(self, x, y):
         ix, iy = int(x), int(y)
-        if ix < 0 or iy < 0 or ix >= SCREEN_WIDTH or iy >= SCREEN_HEIGHT:
+        if ix < 0 or iy < 0 or ix >= WORLD_WIDTH or iy >= WORLD_HEIGHT:
             return ZONE_WALL
         return self.zones.get_at((ix, iy))[0]
 
@@ -326,13 +334,13 @@ class Track:
                 best, best_d = i, d
         return best
 
-    def draw(self, surface, ticks):
-        surface.blit(self.image, (0, 0))
+    def draw(self, surface, cam):
+        surface.blit(self.image, (-int(cam[0]), -int(cam[1])))
         for o in self.obstacles:
-            self._draw_obstacle(surface, o)
+            self._draw_obstacle(surface, o, cam)
 
-    def _draw_obstacle(self, surface, o):
-        x, y = int(o["pos"][0]), int(o["pos"][1])
+    def _draw_obstacle(self, surface, o, cam):
+        x, y = int(o["pos"][0] - cam[0]), int(o["pos"][1] - cam[1])
         pygame.draw.ellipse(surface, (20, 20, 20), (x - 12, y - 4, 28, 20))
         if o["kind"] == "cone":
             pygame.draw.polygon(surface, ORANGE, [(x, y - 14), (x - 10, y + 8), (x + 10, y + 8)])
@@ -364,6 +372,7 @@ class Car:
         self.x, self.y = self.start_pos
         self.angle = self.start_angle
         self.speed = 0.0
+        self.steer = 0.0
         self.nitro = NITRO_MAX
         self.nitro_on = False
         self.offroad = False
@@ -434,9 +443,13 @@ class Car:
         self.speed = max(-CAR_MAX_REVERSE, min(max_speed, self.speed))
 
         # direção
-        steer = (1 if controls.right else 0) - (1 if controls.left else 0)
+        # volante suave: segue a tecla aos poucos e volta ao centro ao soltar
+        target = (1 if controls.right else 0) - (1 if controls.left else 0)
+        self.steer += (target - self.steer) * min(1.0, STEER_SMOOTH * dt)
         grip = min(1.0, abs(self.speed) / CAR_TURN_MIN_SPEED)
-        self.angle += steer * CAR_TURN_RATE * grip * dt * (1 if self.speed >= 0 else -1)
+        fast = min(1.0, abs(self.speed) / CAR_MAX_SPEED)  # em alta velocidade vira menos
+        rate = CAR_TURN_RATE + (CAR_TURN_RATE_FAST - CAR_TURN_RATE) * fast
+        self.angle += self.steer * rate * grip * dt * (1 if self.speed >= 0 else -1)
 
         # movimento com colisão nas bordas (eixos separados para deslizar)
         dx, dy = self.direction
@@ -498,12 +511,13 @@ class Car:
                 vy = -dy * 260 + dx * spread * 120
                 particles.append(Particle((bx, by), (vx, vy), col, 0.25, 7))
 
-    def draw(self, surface):
+    def draw(self, surface, cam):
+        cx, cy = self.x - cam[0], self.y - cam[1]
         rot = pygame.transform.rotate(self.sprite, -math.degrees(self.angle))
         shadow = pygame.transform.rotate(self.sprite, -math.degrees(self.angle))
         shadow.fill((0, 0, 0, 90), special_flags=pygame.BLEND_RGBA_MULT)
-        surface.blit(shadow, shadow.get_rect(center=(self.x + 4, self.y + 5)))
-        surface.blit(rot, rot.get_rect(center=(self.x, self.y)))
+        surface.blit(shadow, shadow.get_rect(center=(cx + 4, cy + 5)))
+        surface.blit(rot, rot.get_rect(center=(cx, cy)))
 
 
 # ============================================================
@@ -533,6 +547,7 @@ class Game:
         self.menu_index = 0
         self.running = True
         self.ticks = 0.0
+        self.cam = [0.0, 0.0]
         self.reset_race()
 
     # --- controle de estado ---
@@ -552,6 +567,14 @@ class Game:
     def start_race(self):
         self.reset_race()
         self.state = COUNTDOWN
+        self.follow_camera(self.car.x, self.car.y, None)
+
+    def follow_camera(self, x, y, dt):
+        tx = max(0, min(WORLD_WIDTH - SCREEN_WIDTH, x - SCREEN_WIDTH / 2))
+        ty = max(0, min(WORLD_HEIGHT - SCREEN_HEIGHT, y - SCREEN_HEIGHT / 2))
+        k = 1.0 if dt is None else min(1.0, CAMERA_SMOOTH * dt)
+        self.cam[0] += (tx - self.cam[0]) * k
+        self.cam[1] += (ty - self.cam[1]) * k
 
     @property
     def current_lap(self):
@@ -607,6 +630,11 @@ class Game:
     def update(self, dt, controls=None):
         self.ticks += dt
         controls = controls or Controls.from_keyboard()
+        if self.state in (MENU, CONTROLS):  # menu: câmera passeia pela pista
+            px, py = self.track.center[int(self.ticks * 8) % self.track.count]
+            self.follow_camera(px, py, dt)
+        else:
+            self.follow_camera(self.car.x, self.car.y, dt)
         if self.state == COUNTDOWN:
             self.count_timer += dt
             if self.count_timer >= COUNTDOWN_STEP * 3:  # "GO!" libera o carro
@@ -656,10 +684,10 @@ class Game:
         if self.state in (MENU, CONTROLS):
             self.draw_menu()
             return
-        self.track.draw(s, self.ticks)
+        self.track.draw(s, self.cam)
         for p in self.particles:
-            p.draw(s)
-        self.car.draw(s)
+            p.draw(s, self.cam)
+        self.car.draw(s, self.cam)
         self.draw_hud()
         if self.flash > 0:
             fl = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -712,7 +740,7 @@ class Game:
 
     def draw_menu(self):
         s = self.screen
-        self.track.draw(s, self.ticks)
+        self.track.draw(s, self.cam)
         self.draw_overlay(150)
         cx = SCREEN_WIDTH // 2
         bob = math.sin(self.ticks * 3) * 6
