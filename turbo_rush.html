@@ -592,7 +592,7 @@ class Game {
     ctx.save(); ctx.beginPath(); ctx.rect(vx, 0, vw, SCREEN_HEIGHT); ctx.clip();
     this.drawHud(p, vx);
     if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${0.63*p.flash/0.35})`; ctx.fillRect(vx, 0, vw, SCREEN_HEIGHT); }
-    if (p.banner > 0) drawText(`VOLTA ${p.lapsDone} COMPLETA!  ${formatTime(p.lastLap)}`, vx + vw/2, 190, vw < 800 ? 34 : 56, YELLOW);
+    if (p.banner > 0) drawText(`VOLTA ${p.lapsDone} COMPLETA!  ${formatTime(p.lastLap)}`, vx + vw/2, vw < 800 ? 100 : 190, vw < 800 ? 30 : 56, YELLOW);
     ctx.restore();
   }
   draw() {
@@ -601,8 +601,8 @@ class Game {
     if (this.twoPlayers) {
       this.drawView(this.players[0], 0, cx); this.drawView(this.players[1], cx, cx);
       ctx.fillStyle = "rgb(16,20,28)"; ctx.fillRect(cx-3, 0, 6, SCREEN_HEIGHT);
-      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(cx-70, 0, 140, 44);
-      drawText(formatTime(this.raceTime), cx, 24, 32);
+      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(cx-70, SCREEN_HEIGHT-44, 140, 44);
+      drawText(formatTime(this.raceTime), cx, SCREEN_HEIGHT-22, 32);
     } else this.drawView(this.players[0], 0, SCREEN_WIDTH);
 
     if (this.state === COUNTDOWN) {
@@ -631,9 +631,18 @@ class Game {
     }
   }
   drawHud(p, vx) {
-    const x = vx + 14, narrow = this.twoPlayers, y0 = narrow ? 50 : 16;
+    if (this.twoPlayers) { // HUD compacto em uma faixa fina no topo, para não cobrir o carro
+      const col = p.index === 0 ? "rgb(255,130,130)" : "rgb(140,185,255)", bw = SCREEN_WIDTH/2 - 28;
+      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(vx, 0, SCREEN_WIDTH/2, 58);
+      drawText(`J${p.index+1}  VOLTA ${p.currentLap}/${TOTAL_LAPS}   ${Math.floor(Math.abs(p.car.speed)*SPEED_DISPLAY_FACTOR)}`, vx + 14, 20, 24, col, false);
+      ctx.fillStyle = "rgb(40,40,40)"; ctx.fillRect(vx + 14, 38, bw, 10);
+      ctx.fillStyle = p.car.nitroOn ? "rgb(255,120,30)" : "rgb(60,200,255)"; ctx.fillRect(vx + 14, 38, bw*p.car.nitro/NITRO_MAX, 10);
+      ctx.strokeStyle = WHITE; ctx.lineWidth = 1; ctx.strokeRect(vx + 14, 38, bw, 10);
+      return;
+    }
+    const x = vx + 14, y0 = 16;
     ctx.fillStyle = "rgba(0,0,0,0.59)"; ctx.fillRect(x, y0, 300, 150);
-    drawText(`${narrow ? "J" + (p.index+1) + "  " : ""}VOLTA ${p.currentLap}/${TOTAL_LAPS}`, x + 14, y0 + 24, 36, narrow ? (p.index === 0 ? "rgb(255,130,130)" : "rgb(140,185,255)") : YELLOW, false);
+    drawText(`VOLTA ${p.currentLap}/${TOTAL_LAPS}`, x + 14, y0 + 24, 36, YELLOW, false);
     drawText(`TEMPO ${formatTime(this.raceTime)}`, x + 14, y0 + 60, 26, WHITE, false);
     drawText(`VELOCIDADE ${Math.floor(Math.abs(p.car.speed)*SPEED_DISPLAY_FACTOR)}`, x + 14, y0 + 88, 26, WHITE, false);
     drawText("NITRO", x + 14, y0 + 120, 26, WHITE, false);
