@@ -1,5 +1,5 @@
 """TURBO RUSH - corrida arcade 2D (Pygame). Rodar: python3 turbo_rush.py"""
-import math, random, sys
+import math, sys
 import pygame
 
 # ---------- configurações ----------
@@ -18,9 +18,8 @@ TRACK_POINTS = [(x * WORLD_SCALE, y * WORLD_SCALE) for x, y in [(640, 630), (100
 OBSTACLES = [(40, 25, "cone"), (62, -28, "tire"), (110, 0, "barrier"), (150, -30, "cone"), (160, 28, "cone"),
              (205, 20, "tire"), (250, -20, "barrier"), (300, 28, "cone"), (330, -25, "tire"), (370, 15, "barrier")]
 ZONE_WALL, ZONE_GRASS, ZONE_ROAD = 0, 1, 2
-MENU, CONTROLS, COUNTDOWN, RACE, PAUSED, FINISHED = range(6)
+MENU, COUNTDOWN, RACE, PAUSED, FINISHED = range(5)
 WHITE, BLACK, YELLOW, ORANGE, RED, GREEN = (255, 255, 255), (0, 0, 0), (255, 214, 52), (255, 140, 30), (230, 50, 50), (80, 255, 120)
-rnd = random.uniform
 
 
 def format_time(s):
@@ -45,22 +44,6 @@ class Controls:
                    k[pygame.K_d] or k[pygame.K_RIGHT], k[pygame.K_LSHIFT] or k[pygame.K_RSHIFT])
 
 
-class Particle:
-    def __init__(self, pos, vel, color, life, size):
-        self.x, self.y, self.vx, self.vy, self.color, self.life, self.max_life, self.size = *pos, *vel, color, life, life, size
-    def update(self, dt):
-        self.life -= dt
-        self.x, self.y, self.vx, self.vy = self.x + self.vx * dt, self.y + self.vy * dt, self.vx * 0.96, self.vy * 0.96
-    def draw(self, surface, cam):
-        pygame.draw.circle(surface, self.color, (int(self.x - cam[0]), int(self.y - cam[1])), max(1, int(self.size * self.life / self.max_life)))
-
-
-def burst(particles, pos, colors, count, speed, life, size):
-    for _ in range(count):
-        a, s = rnd(0, math.tau), rnd(0.3, 1.0) * speed
-        particles.append(Particle(pos, (math.cos(a) * s, math.sin(a) * s), random.choice(colors), rnd(0.6, 1) * life, rnd(0.6, 1) * size))
-
-
 class Track:
     """Pista fechada: linha central (spline), imagem pronta e mapa de zonas (muro/grama/estrada)."""
     def __init__(self):
@@ -77,9 +60,7 @@ class Track:
         self.obstacles = [{"pos": (self.center[i][0] + math.cos(self.tangents[i] + 1.57) * o * ROAD_WIDTH / 96,
                                    self.center[i][1] + math.sin(self.tangents[i] + 1.57) * o * ROAD_WIDTH / 96), "kind": k}
                           for i, o, k in OBSTACLES]
-        random.seed(7)
         self.image = self._build_image()
-        random.seed()
     def _circles(self, surf, color, radius, alt=None):
         for i, p in enumerate(self.center):
             pygame.draw.circle(surf, alt[i // 3 % 2] if alt else color, p, radius)
@@ -97,12 +78,6 @@ class Track:
             for r in range(2):
                 px, py = x + math.cos(a + 1.57) * (c - 5) * k + math.cos(a) * (r - 1) * k, y + math.sin(a + 1.57) * (c - 5) * k + math.sin(a) * (r - 1) * k
                 pygame.draw.rect(img, WHITE if (c + r) % 2 else BLACK, (px - k // 2, py - k // 2, k, k))
-        for _ in range(500):                                                                # árvores fora da pista
-            x, y = random.randint(20, WORLD_WIDTH - 20), random.randint(20, WORLD_HEIGHT - 20)
-            if all(math.hypot(x - cx, y - cy) > RADIUS_GRASS + BARRIER_WIDTH + 24 for cx, cy in self.center[::4]):
-                pygame.draw.circle(img, (20, 80, 40), (x + 4, y + 5), 20)
-                pygame.draw.circle(img, (34, 139, 64), (x, y - 4), 18)
-                pygame.draw.circle(img, (60, 170, 80), (x - 5, y - 9), 8)
         return img
     def zone_at(self, x, y):
         return self.zones.get_at((int(x), int(y)))[0] if 0 <= x < WORLD_WIDTH and 0 <= y < WORLD_HEIGHT else ZONE_WALL
@@ -133,9 +108,9 @@ class Car:
     def reset(self):
         self.x, self.y = self.start_pos
         self.angle, self.speed, self.steer, self.nitro, self.hit_cooldown = self.start_angle, 0.0, 0.0, NITRO_MAX, 0.0
-        self.nitro_on = self.offroad = self.braking = False
-    def update(self, dt, c, track, particles):
-        self.hit_cooldown, self.braking = max(0.0, self.hit_cooldown - dt), False
+        self.nitro_on = self.offroad = False
+    def update(self, dt, c, track):
+        self.hit_cooldown = max(0.0, self.hit_cooldown - dt)
         want = c.nitro and not c.brake                                                     # nitro liga/desliga
         self.nitro_on = want and self.nitro > 0 and (self.nitro_on or self.nitro >= 8)
         self.nitro = max(0.0, self.nitro - NITRO_DRAIN * dt) if self.nitro_on else min(NITRO_MAX, self.nitro + NITRO_RECHARGE * dt)
@@ -143,7 +118,6 @@ class Car:
         if self.nitro_on or c.throttle:                                                    # acelera / freia / atrito
             self.speed += (NITRO_ACCELERATION if self.nitro_on else CAR_ACCELERATION) * dt
         elif c.brake:
-            self.braking = self.speed > 60
             self.speed -= (CAR_BRAKE if self.speed > 0 else CAR_ACCELERATION * 0.6) * dt
         else:
             self.speed -= math.copysign(min(abs(self.speed), CAR_FRICTION * dt), self.speed)
@@ -157,8 +131,6 @@ class Car:
         nx, ny = self.x + dx * self.speed * dt, self.y + dy * self.speed * dt
         if track.zone_at(nx, ny) == ZONE_WALL:                                             # muro: desliza em um eixo
             nx, ny = (nx, self.y) if track.zone_at(nx, self.y) else (self.x, ny) if track.zone_at(self.x, ny) else (self.x, self.y)
-            if abs(self.speed) > 80:
-                burst(particles, (self.x + dx * 18, self.y + dy * 18), [(230, 230, 230)], 12, 220, 0.45, 4)
             self.speed *= -WALL_BOUNCE if self.speed > 150 else WALL_BOUNCE
         self.x, self.y, self.offroad = nx, ny, track.zone_at(nx, ny) == ZONE_GRASS
         for o in track.obstacles:                                                          # obstáculos
@@ -167,18 +139,9 @@ class Car:
             if dist < CAR_RADIUS + OBSTACLE_RADIUS:
                 if self.hit_cooldown <= 0:
                     self.speed, self.hit_cooldown = self.speed * 0.45, 0.4
-                    burst(particles, (ox, oy), [ORANGE, YELLOW, WHITE], 12, 220, 0.45, 4)
                 px, py = self.x + (self.x - ox) / dist * (CAR_RADIUS + OBSTACLE_RADIUS - dist), self.y + (self.y - oy) / dist * (CAR_RADIUS + OBSTACLE_RADIUS - dist)
                 if track.zone_at(px, py):
                     self.x, self.y = px, py
-        bx, by = self.x - dx * CAR_LENGTH / 2, self.y - dy * CAR_LENGTH / 2                # fumaça, poeira, chamas
-        if self.braking:
-            particles += [Particle((bx - dy * s * 8, by + dx * s * 8), (rnd(-25, 25), rnd(-25, 25)), (200, 200, 200), 0.6, 8) for s in (-1, 1)]
-        if self.offroad and abs(self.speed) > 60 and random.random() < 0.5:
-            particles.append(Particle((bx, by), (rnd(-30, 30), rnd(-30, 30)), (140, 190, 110), 0.4, 5))
-        if self.nitro_on:
-            particles += [Particle((bx, by), (-dx * 260 - dy * s * 120, -dy * 260 + dx * s * 120), random.choice([ORANGE, YELLOW, (255, 90, 30)]), 0.25, 7)
-                          for s in (rnd(-0.25, 0.25), rnd(-0.25, 0.25))]
     def draw(self, surface, cam):
         rot = pygame.transform.rotate(self.sprite, -math.degrees(self.angle))
         pos = (self.x - cam[0], self.y - cam[1])
@@ -198,7 +161,7 @@ class Game:
         self.reset_race()
     def reset_race(self):
         self.car.reset()
-        self.particles, self.idx, self.checkpoint, self.laps_done = [], self.track.count - START_BACK, False, 0
+        self.idx, self.checkpoint, self.laps_done = self.track.count - START_BACK, False, 0
         self.race_time = self.lap_start = self.last_lap_time = self.banner_timer = self.flash = self.count_timer = self.go_timer = 0.0
     def start_race(self):
         self.reset_race()
@@ -215,21 +178,21 @@ class Game:
         k, s = event.key, self.state
         enter, esc = k in (pygame.K_RETURN, pygame.K_KP_ENTER), k == pygame.K_ESCAPE
         if s == MENU:
-            self.menu_index = (self.menu_index + (k in (pygame.K_s, pygame.K_DOWN)) - (k in (pygame.K_w, pygame.K_UP))) % 3
+            self.menu_index = (self.menu_index + (k in (pygame.K_s, pygame.K_DOWN)) - (k in (pygame.K_w, pygame.K_UP))) % 2
             if enter or k == pygame.K_SPACE:
-                [self.start_race, lambda: setattr(self, "state", CONTROLS), lambda: setattr(self, "running", False)][self.menu_index]()
+                [self.start_race, lambda: setattr(self, "running", False)][self.menu_index]()
         elif s in (COUNTDOWN, RACE) and esc:
             self.paused_from, self.state = s, PAUSED
         elif s == PAUSED and enter:
             self.state = self.paused_from
         elif s in (PAUSED, FINISHED) and (enter and s == FINISHED or k == pygame.K_r and s == PAUSED):
             self.start_race()
-        elif s in (CONTROLS, PAUSED, FINISHED) and esc:
+        elif s in (PAUSED, FINISHED) and esc:
             self.state = MENU
     def update(self, dt, controls=None):
         self.ticks += dt
         controls = controls or Controls.from_keyboard()
-        if self.state in (MENU, CONTROLS):                                                 # menu: câmera passeia pela pista
+        if self.state == MENU:                                                             # menu: câmera passeia pela pista
             return self.follow_camera(*self.track.center[int(self.ticks * 8) % self.track.count], dt)
         if self.state == COUNTDOWN:
             self.count_timer += dt
@@ -238,15 +201,12 @@ class Game:
         elif self.state in (RACE, FINISHED):
             racing = self.state == RACE
             self.go_timer, self.race_time = max(0.0, self.go_timer - dt), self.race_time + dt * racing
-            self.car.update(dt, controls if racing else Controls(), self.track, self.particles)
+            self.car.update(dt, controls if racing else Controls(), self.track)
             if racing:
                 self.update_laps()
         if self.state != PAUSED:
             self.banner_timer, self.flash = max(0.0, self.banner_timer - dt), max(0.0, self.flash - dt)
             self.follow_camera(self.car.x, self.car.y, dt)
-            for p in self.particles:
-                p.update(dt)
-            self.particles = [p for p in self.particles if p.life > 0]
     def update_laps(self):
         prev, n = self.idx, self.track.count
         self.idx = self.track.nearest_index(self.car.x, self.car.y, prev)
@@ -255,7 +215,6 @@ class Game:
         if prev > n * 0.85 and self.idx < n * 0.15 and self.checkpoint:                    # volta válida
             self.checkpoint, self.laps_done = False, self.laps_done + 1
             self.last_lap_time, self.lap_start, self.banner_timer, self.flash = self.race_time - self.lap_start, self.race_time, 2.0, 0.35
-            burst(self.particles, self.track.center[0], [YELLOW, WHITE, RED, (80, 200, 255), ORANGE], 50, 320, 1.0, 5)
             self.state = FINISHED if self.laps_done >= TOTAL_LAPS else self.state
         elif prev < n * 0.15 and self.idx > n * 0.85:
             self.checkpoint = False
@@ -263,17 +222,13 @@ class Game:
         s, cx, ov = self.screen, SCREEN_WIDTH // 2, pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         text = lambda size, msg, y, color=WHITE, x=cx, center=True: draw_text(s, self.fonts[size], msg, (x, y), color, center)
         self.track.draw(s, self.cam)
-        if self.state in (MENU, CONTROLS):
+        if self.state == MENU:
             ov.fill((0, 0, 0, 150))
             s.blit(ov, (0, 0))
-            text(140, "TURBO RUSH", 170 + math.sin(self.ticks * 3) * 6, YELLOW)
-            lines = ["JOGAR", "CONTROLES", "SAIR"] if self.state == MENU else ["CONTROLES", "WASD = dirigir", "SHIFT = nitro", "ESC = pausa", "Pressione ESC para voltar"]
-            for i, line in enumerate(lines):
-                sel = self.state == MENU and i == self.menu_index
-                text(72 if i == 0 or self.state == MENU else 48, f"> {line} <" if sel else line, 320 + i * 70, YELLOW if sel or i in (1, 2, 3) and self.state == CONTROLS else WHITE)
-            return
-        for p in self.particles:
-            p.draw(s, self.cam)
+            text(140, "TURBO RUSH", 170, YELLOW)
+            for i, line in enumerate(["JOGAR", "SAIR"]):
+                text(72, f"> {line} <" if i == self.menu_index else line, 340 + i * 80, YELLOW if i == self.menu_index else WHITE)
+            return text(34, "WASD = dirigir   SHIFT = nitro   ESC = pausa   W/S + ENTER = menu", SCREEN_HEIGHT - 50, (200, 200, 200))
         self.car.draw(s, self.cam)
         ov.fill((0, 0, 0, 150))
         s.blit(ov, (16, 16), (0, 0, 300, 150))                                             # HUD

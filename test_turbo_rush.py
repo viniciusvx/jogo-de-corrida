@@ -27,9 +27,8 @@ def main():
     # menu
     g.draw(); pygame.image.save(g.screen, "/tmp/menu.png")
     g.handle_event(key(pygame.K_s)); assert g.menu_index == 1
-    g.handle_event(key(pygame.K_RETURN)); assert g.state == t.CONTROLS
-    g.draw(); g.handle_event(key(pygame.K_ESCAPE)); assert g.state == t.MENU
-    g.handle_event(key(pygame.K_w)); g.handle_event(key(pygame.K_RETURN))
+    g.handle_event(key(pygame.K_w)); assert g.menu_index == 0
+    g.handle_event(key(pygame.K_RETURN))
     assert g.state == t.COUNTDOWN
     # carro parado na contagem
     for _ in range(60):
@@ -82,7 +81,7 @@ def main():
     g.reset_race(); g.state = t.RACE
     ox, oy = g.track.obstacles[0]["pos"]; g.car.x, g.car.y, g.car.speed = ox - 20, oy, 300
     g.car.angle = 0; g.update(1 / 60, t.Controls())
-    assert g.car.speed < 200 and g.particles
+    assert g.car.speed < 200
     print("OK")
 
 
