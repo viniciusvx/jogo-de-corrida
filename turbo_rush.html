@@ -96,12 +96,9 @@ addEventListener("keydown", e => { if (GAME_KEYS.has(e.code)) e.preventDefault()
 addEventListener("keyup", e => { keys[e.code] = false; });
 addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
 canvas.addEventListener("pointerdown", () => canvas.focus());
-function readControls(index, twoPlayers) {
-  const wasd = { throttle: keys.KeyW, brake: keys.KeyS, left: keys.KeyA, right: keys.KeyD, nitro: keys.ShiftLeft };
-  const arrows = { throttle: keys.ArrowUp, brake: keys.ArrowDown, left: keys.ArrowLeft, right: keys.ArrowRight, nitro: keys.ShiftRight || keys.Slash || keys.Numpad0 };
-  if (twoPlayers) return index === 0 ? wasd : arrows;
-  return { throttle: wasd.throttle||arrows.throttle, brake: wasd.brake||arrows.brake, left: wasd.left||arrows.left,
-           right: wasd.right||arrows.right, nitro: wasd.nitro||arrows.nitro };
+function readControls(index) {
+  return index === 0 ? { throttle: keys.KeyW, brake: keys.KeyS, left: keys.KeyA, right: keys.KeyD, nitro: keys.ShiftLeft }
+    : { throttle: keys.ArrowUp, brake: keys.ArrowDown, left: keys.ArrowLeft, right: keys.ArrowRight, nitro: keys.ShiftRight || keys.Slash || keys.Numpad0 };
 }
 const noControls = () => ({throttle:false,brake:false,left:false,right:false,nitro:false});
 
@@ -475,7 +472,7 @@ class Player {
   constructor(index, track, total) {
     this.index = index;
     const si = track.count - START_BACK, [cx, cy] = track.center[si], a = track.tangents[si];
-    const lat = total === 1 ? 0 : (index === 0 ? -1 : 1)*GRID_OFFSET;
+    const lat = (index === 0 ? -1 : 1)*GRID_OFFSET;
     this.car = new Car(cx + Math.cos(a + Math.PI/2)*lat, cy + Math.sin(a + Math.PI/2)*lat, a, PLAYER_COLORS[index]);
     this.idx = si; this.checkpoint = false; this.lapsDone = 0; this.lapStart = 0; this.lastLap = 0; this.finishTime = null;
     this.banner = 0; this.flash = 0; this.camX = 0; this.camY = 0;
@@ -488,22 +485,21 @@ class Player {
 // ============================================================
 class Game {
   constructor() {
-    this.tracks = {}; this.themeIndex = 0; this.twoPlayers = false;
+    this.tracks = {}; this.themeIndex = 0;
     this.state = MENU; this.menuIndex = 0; this.ticks = 0; this.menuCamX = 0; this.menuCamY = 0;
-    this.menuItems = ["1 JOGADOR", "2 JOGADORES", "CENARIO", "CONTROLES", "SAIR"];
+    this.menuItems = ["JOGAR", "CENARIO", "CONTROLES", "SAIR"];
     this.particles = []; this.players = []; this.raceTime = 0; this.countTimer = 0; this.goTimer = 0; this.winner = null;
-    this.getControls = (i) => readControls(i, this.twoPlayers);
+    this.getControls = (i) => readControls(i);
   }
   get theme() { return THEMES[this.themeIndex]; }
   get track() { return this.tracks[this.theme.id] || (this.tracks[this.theme.id] = new Track(this.theme)); }
-  startRace(two = this.twoPlayers) {
-    this.twoPlayers = two;
-    this.players = [0, ...(two ? [1] : [])].map(i => new Player(i, this.track, two ? 2 : 1));
+  startRace() {
+    this.players = [0, 1].map(i => new Player(i, this.track, 2));
     this.particles = []; this.raceTime = 0; this.countTimer = 0; this.goTimer = 0; this.winner = null;
     this.state = COUNTDOWN;
     this.players.forEach(p => this.followCamera(p, null));
   }
-  viewWidth() { return this.twoPlayers ? SCREEN_WIDTH/2 : SCREEN_WIDTH; }
+  viewWidth() { return SCREEN_WIDTH/2; }
   followCamera(p, dt) {
     const vw = this.viewWidth();
     const tx = Math.max(0, Math.min(WORLD_WIDTH - vw, p.car.x - vw/2)), ty = Math.max(0, Math.min(WORLD_HEIGHT - SCREEN_HEIGHT, p.car.y - SCREEN_HEIGHT/2));
@@ -516,13 +512,12 @@ class Game {
       const n = this.menuItems.length;
       if (code === "KeyW" || code === "ArrowUp") this.menuIndex = (this.menuIndex + n - 1) % n;
       else if (code === "KeyS" || code === "ArrowDown") this.menuIndex = (this.menuIndex + 1) % n;
-      else if (this.menuIndex === 2 && (code === "KeyA" || code === "ArrowLeft")) this.themeIndex = (this.themeIndex + THEMES.length - 1) % THEMES.length;
-      else if (this.menuIndex === 2 && (code === "KeyD" || code === "ArrowRight")) this.themeIndex = (this.themeIndex + 1) % THEMES.length;
+      else if (this.menuIndex === 1 && (code === "KeyA" || code === "ArrowLeft")) this.themeIndex = (this.themeIndex + THEMES.length - 1) % THEMES.length;
+      else if (this.menuIndex === 1 && (code === "KeyD" || code === "ArrowRight")) this.themeIndex = (this.themeIndex + 1) % THEMES.length;
       else if (code === "Enter" || code === "Space") {
-        if (this.menuIndex === 0) this.startRace(false);
-        else if (this.menuIndex === 1) this.startRace(true);
-        else if (this.menuIndex === 2) this.themeIndex = (this.themeIndex + 1) % THEMES.length;
-        else if (this.menuIndex === 3) this.state = CONTROLS;
+        if (this.menuIndex === 0) this.startRace();
+        else if (this.menuIndex === 1) this.themeIndex = (this.themeIndex + 1) % THEMES.length;
+        else if (this.menuIndex === 2) this.state = CONTROLS;
         else this.quitMsg = true;
       }
     } else if (s === CONTROLS) { if (code === "Escape") this.state = MENU; }
@@ -598,12 +593,10 @@ class Game {
   draw() {
     const cx = SCREEN_WIDTH/2;
     if (this.state === MENU || this.state === CONTROLS) return this.drawMenu();
-    if (this.twoPlayers) {
-      this.drawView(this.players[0], 0, cx); this.drawView(this.players[1], cx, cx);
-      ctx.fillStyle = "rgb(16,20,28)"; ctx.fillRect(cx-3, 0, 6, SCREEN_HEIGHT);
-      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(cx-70, SCREEN_HEIGHT-44, 140, 44);
-      drawText(formatTime(this.raceTime), cx, SCREEN_HEIGHT-22, 32);
-    } else this.drawView(this.players[0], 0, SCREEN_WIDTH);
+    this.drawView(this.players[0], 0, cx); this.drawView(this.players[1], cx, cx);
+    ctx.fillStyle = "rgb(16,20,28)"; ctx.fillRect(cx-3, 0, 6, SCREEN_HEIGHT);
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(cx-70, SCREEN_HEIGHT-44, 140, 44);
+    drawText(formatTime(this.raceTime), cx, SCREEN_HEIGHT-22, 32);
 
     if (this.state === COUNTDOWN) {
       this.overlay(80);
@@ -615,41 +608,23 @@ class Game {
       ["ENTER = continuar", "R = reiniciar", "ESC = menu"].forEach((l, i) => drawText(l, cx, 340 + i*55, 44, YELLOW));
     } else if (this.state === FINISHED) {
       this.overlay(170);
-      if (this.twoPlayers) {
-        const w = this.winner;
-        drawText(`JOGADOR ${w.index + 1} VENCEU!`, cx, 190, 80, w.index === 0 ? "rgb(255,110,110)" : "rgb(120,175,255)");
-        drawText("CORRIDA FINALIZADA!", cx, 270, 46, YELLOW);
-        drawText(`TEMPO: ${formatTime(this.raceTime)}`, cx, 350, 80);
-        this.players.forEach((p, i) => drawText(`J${i+1}: VOLTA ${p.currentLap}/${TOTAL_LAPS}${p.finishTime != null ? "  " + formatTime(p.finishTime) : ""}`, cx, 425 + i*40, 32,
-          i === 0 ? "rgb(255,150,150)" : "rgb(150,195,255)"));
-      } else {
-        drawText("CORRIDA FINALIZADA!", cx, 220, 66, YELLOW);
-        drawText(`TEMPO: ${formatTime(this.raceTime)}`, cx, 330, 120);
-      }
+      const w = this.winner;
+      drawText(`JOGADOR ${w.index + 1} VENCEU!`, cx, 190, 80, w.index === 0 ? "rgb(255,110,110)" : "rgb(120,175,255)");
+      drawText("CORRIDA FINALIZADA!", cx, 270, 46, YELLOW);
+      drawText(`TEMPO: ${formatTime(this.raceTime)}`, cx, 350, 80);
+      this.players.forEach((p, i) => drawText(`J${i+1}: VOLTA ${p.currentLap}/${TOTAL_LAPS}${p.finishTime != null ? "  " + formatTime(p.finishTime) : ""}`, cx, 425 + i*40, 32,
+        i === 0 ? "rgb(255,150,150)" : "rgb(150,195,255)"));
       drawText("Pressione ENTER para jogar novamente.", cx, 530, 40);
       drawText("Pressione ESC para voltar ao menu.", cx, 580, 40);
     }
   }
   drawHud(p, vx) {
-    if (this.twoPlayers) { // HUD compacto em uma faixa fina no topo, para não cobrir o carro
-      const col = p.index === 0 ? "rgb(255,130,130)" : "rgb(140,185,255)", bw = SCREEN_WIDTH/2 - 28;
-      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(vx, 0, SCREEN_WIDTH/2, 58);
-      drawText(`J${p.index+1}  VOLTA ${p.currentLap}/${TOTAL_LAPS}   ${Math.floor(Math.abs(p.car.speed)*SPEED_DISPLAY_FACTOR)}`, vx + 14, 20, 24, col, false);
-      ctx.fillStyle = "rgb(40,40,40)"; ctx.fillRect(vx + 14, 38, bw, 10);
-      ctx.fillStyle = p.car.nitroOn ? "rgb(255,120,30)" : "rgb(60,200,255)"; ctx.fillRect(vx + 14, 38, bw*p.car.nitro/NITRO_MAX, 10);
-      ctx.strokeStyle = WHITE; ctx.lineWidth = 1; ctx.strokeRect(vx + 14, 38, bw, 10);
-      return;
-    }
-    const x = vx + 14, y0 = 16;
-    ctx.fillStyle = "rgba(0,0,0,0.59)"; ctx.fillRect(x, y0, 300, 150);
-    drawText(`VOLTA ${p.currentLap}/${TOTAL_LAPS}`, x + 14, y0 + 24, 36, YELLOW, false);
-    drawText(`TEMPO ${formatTime(this.raceTime)}`, x + 14, y0 + 60, 26, WHITE, false);
-    drawText(`VELOCIDADE ${Math.floor(Math.abs(p.car.speed)*SPEED_DISPLAY_FACTOR)}`, x + 14, y0 + 88, 26, WHITE, false);
-    drawText("NITRO", x + 14, y0 + 120, 26, WHITE, false);
-    const bx = x + 112, bw = 164;
-    ctx.fillStyle = "rgb(40,40,40)"; ctx.fillRect(bx, y0 + 112, bw, 16);
-    ctx.fillStyle = p.car.nitroOn ? "rgb(255,120,30)" : "rgb(60,200,255)"; ctx.fillRect(bx, y0 + 112, bw*p.car.nitro/NITRO_MAX, 16);
-    ctx.strokeStyle = WHITE; ctx.lineWidth = 2; ctx.strokeRect(bx, y0 + 112, bw, 16);
+    const col = p.index === 0 ? "rgb(255,130,130)" : "rgb(140,185,255)", bw = SCREEN_WIDTH/2 - 28;   // faixa fina no topo, para não cobrir o carro
+    ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(vx, 0, SCREEN_WIDTH/2, 58);
+    drawText(`J${p.index+1}  VOLTA ${p.currentLap}/${TOTAL_LAPS}   ${Math.floor(Math.abs(p.car.speed)*SPEED_DISPLAY_FACTOR)}`, vx + 14, 20, 24, col, false);
+    ctx.fillStyle = "rgb(40,40,40)"; ctx.fillRect(vx + 14, 38, bw, 10);
+    ctx.fillStyle = p.car.nitroOn ? "rgb(255,120,30)" : "rgb(60,200,255)"; ctx.fillRect(vx + 14, 38, bw*p.car.nitro/NITRO_MAX, 10);
+    ctx.strokeStyle = WHITE; ctx.lineWidth = 1; ctx.strokeRect(vx + 14, 38, bw, 10);
   }
   drawMenu() {
     const cx = SCREEN_WIDTH/2;
@@ -659,14 +634,14 @@ class Game {
       this.menuItems.forEach((it, i) => {
         const sel = i === this.menuIndex;
         let label = it;
-        if (i === 2) label = `CENÁRIO: < ${this.theme.name} >`;
+        if (i === 1) label = `CENÁRIO: < ${this.theme.name} >`;
         drawText(sel ? `> ${label} <` : label, cx, 300 + i*70, 50, sel ? YELLOW : WHITE);
       });
       drawText(this.quitMsg ? "Feche a aba do navegador para sair." : "W/S = escolher   A/D = trocar cenário   ENTER = confirmar", cx, SCREEN_HEIGHT-40, 26, "rgb(220,220,220)");
     } else {
       drawText("CONTROLES", cx, 280, 60);
       [["JOGADOR 1: WASD = dirigir   SHIFT ESQ = nitro", "rgb(255,140,140)"], ["JOGADOR 2: SETAS = dirigir   SHIFT DIR = nitro", "rgb(150,195,255)"],
-       ["1 JOGADOR: WASD ou SETAS", WHITE], ["ESC = pausa", YELLOW]].forEach(([l, col], i) => drawText(l, cx, 360 + i*55, 36, col));
+       ["ESC = pausa", YELLOW]].forEach(([l, col], i) => drawText(l, cx, 360 + i*55, 36, col));
       drawText("Pressione ESC para voltar", cx, SCREEN_HEIGHT-40, 26, "rgb(220,220,220)");
     }
   }

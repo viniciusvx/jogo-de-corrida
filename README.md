@@ -9,4 +9,4 @@ Controles: WASD dirige, SHIFT nitro, ESC pausa. Teste: `python3 test_turbo_rush.
 
 ## Versao navegador
 Abra `turbo_rush.html` no navegador (arquivo unico, sem internet).
-Tem 1 ou 2 jogadores (J1: WASD + Shift esq; J2: setas + Shift dir) e 4 cenarios: praia, deserto, mar e cidade.
+Sempre 2 jogadores em tela dividida (J1: WASD + Shift esq; J2: setas + Shift dir) e 4 cenarios: praia, deserto, mar e cidade.
